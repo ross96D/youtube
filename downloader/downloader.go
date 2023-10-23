@@ -122,6 +122,36 @@ func (dl *Downloader) DownloadComposite(ctx context.Context, outputFile string, 
 	return ffmpegVersionCmd.Run()
 }
 
+func (dl *Downloader) DownloadAudio(ctx context.Context, outputFile string, v *youtube.Video, quality string, mimetype string) error {
+	_, audioFormat, err1 := getVideoAudioFormats(v, quality, mimetype)
+	if err1 != nil {
+		return err1
+	}
+
+	log := youtube.Logger.With("id", v.ID)
+
+	youtube.Logger.Info(
+		"Downloading audio",
+		"id", v.ID,
+		"quality", audioFormat.Quality,
+		"mimeType", audioFormat.MimeType,
+	)
+
+	destFile, err := dl.getOutputFile(v, audioFormat, outputFile)
+
+	if err != nil {
+		return err
+	}
+
+	audioFile, err := os.Create(destFile)
+	if err != nil {
+		return err
+	}
+
+	log.Debug("Downloading audio file...")
+	return dl.videoDLWorker(ctx, audioFile, v, audioFormat)
+}
+
 func getVideoAudioFormats(v *youtube.Video, quality string, mimetype string) (*youtube.Format, *youtube.Format, error) {
 	var videoFormat, audioFormat *youtube.Format
 	var videoFormats, audioFormats youtube.FormatList

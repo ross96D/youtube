@@ -19,13 +19,23 @@ import (
 
 var (
 	insecureSkipVerify bool   // skip TLS server validation
+	audio              bool   // only audi
 	outputQuality      string // itag number or quality string
 	mimetype           string // mimetype
 	downloader         *ytdl.Downloader
+	chunkSize          int64
 )
 
 func addQualityFlag(flagSet *pflag.FlagSet) {
 	flagSet.StringVarP(&outputQuality, "quality", "q", "medium", "The itag number or quality label (hd720, medium)")
+}
+
+func addAudioFlag(flagSet *pflag.FlagSet) {
+	flagSet.BoolVarP(&audio, "audio", "a", false, "should download only audio")
+}
+
+func addChunkSizeFlag(flagSet *pflag.FlagSet) {
+	flagSet.Int64VarP(&chunkSize, "size", "s", 0, "Chunk download size")
 }
 
 func addMimeTypeFlag(flagSet *pflag.FlagSet) {
@@ -66,6 +76,8 @@ func getDownloader() *ytdl.Downloader {
 		OutputDir: outputDir,
 	}
 	downloader.HTTPClient = &http.Client{Transport: httpTransport}
+
+	downloader.ChunkSize = chunkSize
 
 	return downloader
 }

@@ -34,6 +34,8 @@ func init() {
 	downloadCmd.Flags().StringVarP(&outputDir, "directory", "d", ".", "The output directory.")
 	addQualityFlag(downloadCmd.Flags())
 	addMimeTypeFlag(downloadCmd.Flags())
+	addAudioFlag(downloadCmd.Flags())
+	addChunkSizeFlag(downloadCmd.Flags())
 }
 
 func download(id string) error {
@@ -43,6 +45,10 @@ func download(id string) error {
 	}
 
 	log.Println("download to directory", outputDir)
+
+	if audio {
+		return downloader.DownloadAudio(context.Background(), outputFile, video, outputQuality, mimetype)
+	}
 
 	if strings.HasPrefix(outputQuality, "hd") {
 		if err := checkFFMPEG(); err != nil {
