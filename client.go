@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -364,12 +365,12 @@ func (c *Client) downloadOnce(req *http.Request, w *io.PipeWriter, _ *Format) in
 	return length
 }
 
-func (c *Client) getChunkSize() int64 {
+func (c *Client) getChunkSize(contentLength int64) int64 {
 	if c.ChunkSize > 0 {
 		return c.ChunkSize
 	}
-
-	return Size10Mb
+	return int64(math.Floor(float64(contentLength) / 10))
+	// return Size10Mb
 }
 
 func (c *Client) getMaxRoutines(limit int) int {
@@ -387,7 +388,8 @@ func (c *Client) getMaxRoutines(limit int) int {
 }
 
 func (c *Client) downloadChunked(ctx context.Context, req *http.Request, w *io.PipeWriter, format *Format) {
-	chunks := getChunks(format.ContentLength, c.getChunkSize())
+	csize := c.getChunkSize(format.ContentLength)
+	chunks := getChunks(format.ContentLength, csize)
 	maxRoutines := c.getMaxRoutines(len(chunks))
 
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -586,33 +588,57 @@ func (c *Client) httpPostBodyBytes(ctx context.Context, url string, body interfa
 // Downloading in multiple chunks is much faster:
 // https://github.com/kkdai/youtube/pull/190
 func (c *Client) downloadChunk(req *http.Request, chunk *chunk) error {
+	count := 0
+	for {
+		n, err := c._downloadChunk(req, chunk)
+		if err == nil {
+			break
+		}
+		if n > chunk.end-chunk.start+1 {
+			break
+			// return err
+		}
+		if n == 0 {
+			count++
+			if count > 3 {
+				return err
+			}
+		} else {
+			count = 0
+		}
+		chunk.start += n
+	}
+	return nil
+}
+
+func (c *Client) _downloadChunk(req *http.Request, chunk *chunk) (int64, error) {
 	q := req.URL.Query()
-	q.Set("range", fmt.Sprintf("%d-%d", chunk.start, chunk.end))
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := c.httpDo(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK && resp.StatusCode >= 300 {
-		return ErrUnexpectedStatusCode(resp.StatusCode)
+		return 0, ErrUnexpectedStatusCode(resp.StatusCode)
 	}
 
 	expected := int(chunk.end-chunk.start) + 1
 	data, err := io.ReadAll(resp.Body)
 	n := len(data)
+	if n != 0 {
+		chunk.data <- data
+	}
 
 	if err != nil {
-		return err
+		return int64(n), err
 	}
 
 	if n != expected {
-		return fmt.Errorf("chunk at offset %d has invalid size: expected=%d actual=%d", chunk.start, expected, n)
+		return int64(n), fmt.Errorf("chunk at offset %d has invalid size: expected=%d actual=%d", chunk.start, expected, n)
 	}
 
-	chunk.data <- data
-
-	return nil
+	return int64(n), nil
 }
